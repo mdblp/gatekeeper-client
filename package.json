@@ -7,6 +7,9 @@
     "lib": "./lib/index"
   },
   "repository": "https://github.com/tidepool-org/gatekeeper-client.git",
+  "publishConfig": {
+    "registry": "https://nexus.ci.diabeloop.eu/repository/your-loops-npm/"
+  },
   "author": {
     "name": "Eric Tschetter",
     "email": "cheddar@tidepool.org",
@@ -14,7 +17,7 @@
   },
   "license": "BSD-2-Clause",
   "dependencies": {
-    "amoeba": "0.6.0"
+    "amoeba": "0.8.1"
   },
   "devDependencies": {
     "mocha": "6.1.4",
