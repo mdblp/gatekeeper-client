@@ -15,176 +15,155 @@
  * == BSD2 LICENSE ==
  */
 
-var salinity = require('salinity');
-var expect = salinity.expect;
-var sinon = salinity.sinon;
+const sinon = require('sinon');
+const expect = require('chai').expect;
+const axios = require('axios');
 
-describe('client.js', function() {
-  var token;
-  var hosts;
-  var request = sinon.stub();
+describe('Opa authorization',function(){
+  const opaHost = 'http://my-opa'
+  const serviceName = 'test-service'
+  const stubs = {
+    host : sinon.stub(process.env, 'OPA_HOST').value(opaHost),
+    service : sinon.stub(process.env, 'SERVICE_NAME').value(serviceName)
+  };
+  const client = require('../lib').opaClient;
+  
+  const initStub = (response={}) => {
+    stubs.axios = sinon.stub(axios, 'post').returns(response);
+  };
 
-  var httpClient = require('amoeba').httpClient({}, request);
-  var tokenGetter = function(fn){ fn(null, token); };
-  var hostGetter = { get: function(){ return hosts; } };
+  const userId1 = "1234"
+  const userId2 = `${userId1}_bis`
+  const requests = {
+    serverToken : {
+      _tokendata: {
+        isserver: true
+      }
+    },
+    self : {
+      _tokendata: {
+        userid: userId1,
+      }
+    },
+    restifyReq : {
+      _tokendata: {
+        userid: userId1,
+      },
+      headers: {
+        host: "http://test",
+        "custom-header": "test"
+      },
+      method: "TEST",
+      httpVersion: "1.5",
+      _url: {
+        pathname: "/route/subroute",
+        query: "var1=2&var2=2"
+      }
+    }
+  }
+  const expectedRestifyRequest = {
+    input : {
+        request : {
+          headers: requests.restifyReq.headers,
+          method: requests.restifyReq.method,
+          protocol: `HTTP/${requests.restifyReq.httpVersion}`,
+          host: requests.restifyReq.headers.host,
+          path: requests.restifyReq._url.pathname,
+          query: requests.restifyReq._url.query,
+          service: serviceName
+        },
+        data: {}
+    }
+  }
 
-  var client;
 
-  beforeEach(function() {
-    token = '1234';
-    hosts = [{ protocol: 'http', host: 'localhost:1234' }];
-    request.reset();
-
-    client = require('../lib').client(httpClient, tokenGetter, hostGetter);
+  after(function() {
+    stubs.host.restore();
+    stubs.service.restore();
   });
 
-  describe('userInGroup', function() {
-    it('does a request', function(done) {
-      request.callsArgWith(1, null, { statusCode: 200 }, { "view": {} });
-
-      client.userInGroup('1234', 'abcd', function(err, result) {
-        expect(result).to.deep.equal({ view: {} });
-        expect(request).calledWith(
-          sinon.match({
-            url: 'http://localhost:1234/access/abcd/1234',
-            method: 'GET',
-            headers: { 'x-tidepool-session-token': '1234'}
-          }),
-          sinon.match.func
-        );
-        done(err);
-      });
-    });
-
-    it('passes back error codes', function(done) {
-      request.callsArgWith(1, null, { statusCode: 401 }, 'billybobbump');
-
-      client.userInGroup('1234', 'abcd', function(err, result) {
-        expect(result).to.not.exist;
-        expect(err).to.deep.equal({ statusCode: 401, message: 'billybobbump' });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/abcd/1234',
-                        method: 'GET',
-                        headers: { 'x-tidepool-session-token': '1234'}
-                      }),
-          sinon.match.func
-        );
-        done();
-      });
-    });
+  afterEach(function() {
+    stubs.axios.restore();
   });
 
-  describe('usersInGroup', function() {
-    it('does a request', function(done) {
-      request.callsArgWith(1, null, { statusCode: 200 }, { "view": {} });
-
-      client.usersInGroup('abcd', function(err, result) {
-        expect(result).to.deep.equal({ view: {} });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/abcd',
-                        method: 'GET',
-                        headers: { 'x-tidepool-session-token': '1234'}
-                      }),
-          sinon.match.func
-        );
-        done(err);
-      });
-    });
-
-    it('passes back error codes', function(done) {
-      request.callsArgWith(1, null, { statusCode: 401 }, 'billybobbump');
-
-      client.usersInGroup('abcd', function(err, result) {
-        expect(result).to.not.exist;
-        expect(err).to.deep.equal({ statusCode: 401, message: 'billybobbump' });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/abcd',
-                        method: 'GET',
-                        headers: { 'x-tidepool-session-token': '1234'}
-                      }),
-          sinon.match.func
-        );
-        done();
-      });
-    });
+  it('Requests without token data should not be authorized', async function() {
+    initStub();
+    const auth = await client.isAuthorized({})
+    expect(auth).to.equal(false);
+    expect(stubs.axios.called).to.equal(false);
   });
 
-  describe('groupsForUser', function() {
-    it('does a request', function(done) {
-      request.callsArgWith(1, null, { statusCode: 200 }, { "view": {} });
-
-      client.groupsForUser('1234', function(err, result) {
-        expect(result).to.deep.equal({ view: {} });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/groups/1234',
-                        method: 'GET',
-                        headers: { 'x-tidepool-session-token': '1234'}
-                      }),
-          sinon.match.func
-        );
-        done(err);
-      });
-    });
-
-    it('passes back error codes', function(done) {
-      request.callsArgWith(1, null, { statusCode: 401 }, 'billybobbump');
-
-      client.groupsForUser('1234', function(err, result) {
-        expect(result).to.not.exist;
-        expect(err).to.deep.equal({ statusCode: 401, message: 'billybobbump' });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/groups/1234',
-                        method: 'GET',
-                        headers: { 'x-tidepool-session-token': '1234'}
-                      }),
-          sinon.match.func
-        );
-        done();
-      });
-    });
+  it('Requests with server token should be authorized', async function() {
+    initStub();
+    const auth = await client.isAuthorized(requests.serverToken)
+    expect(auth).to.equal(true);
+    expect(stubs.axios.called).to.equal(false);
   });
 
-  describe('setPermissions', function() {
-    it('does a request', function(done) {
-      request.callsArgWith(1, null, { statusCode: 200 }, { "view": {} });
+  it('Requests for self should be authorized', async function() {
+    initStub();
+    const auth = await client.isAuthorized(requests.self,[userId1])
+    expect(auth).to.equal(true);
+    expect(stubs.axios.called).to.equal(false);
+  });
 
-      client.setPermissions('1234', 'abcd', { view: {} }, function(err, result) {
-        expect(result).to.deep.equal({ view: {} });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/abcd/1234',
-                        method: 'POST',
-                        headers: { 'x-tidepool-session-token': '1234', 'content-type': 'application/json' },
-                        body: JSON.stringify({ view: {} })
-                      }),
-          sinon.match.func
-        );
-        done(err);
-      });
-    });
+  it('Requests for other user should call teamsApi', async function() {
+    initStub({});
+    const auth = await client.isAuthorized(requests.self,[userId1, userId2]);
+    expect(auth).to.equal(false);
+    expect(stubs.axios.called).to.equal(true);
+    const expectedRequest = {
+      input : {
+          request : {
+            headers: {},
+            method: '',
+            protocol: 'HTTP/',
+            host: '',
+            path: '',
+            query: '',
+            service: serviceName
+          },
+          data: {}
+      }
+    }
+    sinon.assert.calledWith(stubs.axios, 
+      opaHost+'/v1/data/backloops/access',expectedRequest
+    );
+  });
 
-    it('passes back error codes', function(done) {
-      request.callsArgWith(1, null, { statusCode: 401 }, 'billybobbump');
+  it('Requests for other user should call teamsApi and forward source request data', async function() {
+    initStub({});
+    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2])
+    expect(auth).to.equal(false);
+    expect(stubs.axios.called).to.equal(true);
+    sinon.assert.calledWith(stubs.axios, 
+      opaHost+'/v1/data/backloops/access',expectedRestifyRequest
+    );
+  });
 
-      client.setPermissions('1234', 'abcd', { view: {} }, function(err, result) {
-        expect(result).to.not.exist;
-        expect(err).to.deep.equal({ statusCode: 401, message: 'billybobbump' });
-        expect(request).calledWith(
-          sinon.match({
-                        url: 'http://localhost:1234/access/abcd/1234',
-                        method: 'POST',
-                        headers: { 'x-tidepool-session-token': '1234', 'content-type': 'application/json' },
-                        body: JSON.stringify({ view: {} })
-                      }),
-          sinon.match.func
-        );
-        done();
-      });
-    });
+  it('Requests for other user should call teamsApi and forward additional data', async function() {
+    initStub({});
+    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2],{test:"test0"})
+    expect(auth).to.equal(false);
+    expect(stubs.axios.called).to.equal(true);
+    const expectedRequest = {...expectedRestifyRequest}
+    expectedRequest.input.data = {test:"test0"}
+    sinon.assert.calledWith(stubs.axios, 
+      opaHost+'/v1/data/backloops/access',expectedRequest
+    );
+  });
+
+  it('Requests for other user should call teamsApi and return authorized result when status is 200', async function() {
+    initStub({status:200, data:{result:{authorized:true}}});
+    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2]);
+    expect(stubs.axios.called).to.equal(true);
+    expect(auth).to.equal(true);
+  });
+
+  it('Requests for other user should call teamsApi and return false when status is not 200', async function() {
+    initStub({status:404, data:{result:{authorized:true}}});
+    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2]);
+    expect(auth).to.equal(false);
+    expect(stubs.axios.called).to.equal(true);
   });
 });
