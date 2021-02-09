@@ -19,7 +19,7 @@ const sinon = require('sinon');
 const expect = require('chai').expect;
 const axios = require('axios');
 
-describe('Opa authorization',function(){
+describe('Opa client', function() {
   const opaHost = 'http://my-opa'
   const serviceName = 'test-service'
   const stubs = {
@@ -76,7 +76,6 @@ describe('Opa authorization',function(){
     }
   }
 
-
   after(function() {
     stubs.host.restore();
     stubs.service.restore();
@@ -85,85 +84,129 @@ describe('Opa authorization',function(){
   afterEach(function() {
     stubs.axios.restore();
   });
+  describe('Teams authorization', function() {
+    it('Requests without token data should not be authorized', async function() {
+      initStub();
+      const auth = await client.isAuthorized({})
+      expect(auth).to.equal(false);
+      expect(stubs.axios.called).to.equal(false);
+    });
 
-  it('Requests without token data should not be authorized', async function() {
-    initStub();
-    const auth = await client.isAuthorized({})
-    expect(auth).to.equal(false);
-    expect(stubs.axios.called).to.equal(false);
-  });
+    it('Requests with server token should be authorized', async function() {
+      initStub();
+      const auth = await client.isAuthorized(requests.serverToken)
+      expect(auth).to.equal(true);
+      expect(stubs.axios.called).to.equal(false);
+    });
 
-  it('Requests with server token should be authorized', async function() {
-    initStub();
-    const auth = await client.isAuthorized(requests.serverToken)
-    expect(auth).to.equal(true);
-    expect(stubs.axios.called).to.equal(false);
-  });
+    it('Requests for self should be authorized', async function() {
+      initStub();
+      const auth = await client.isAuthorized(requests.self,[userId1])
+      expect(auth).to.equal(true);
+      expect(stubs.axios.called).to.equal(false);
+    });
 
-  it('Requests for self should be authorized', async function() {
-    initStub();
-    const auth = await client.isAuthorized(requests.self,[userId1])
-    expect(auth).to.equal(true);
-    expect(stubs.axios.called).to.equal(false);
-  });
-
-  it('Requests for other user should call teamsApi', async function() {
-    initStub({});
-    const auth = await client.isAuthorized(requests.self,[userId1, userId2]);
-    expect(auth).to.equal(false);
-    expect(stubs.axios.called).to.equal(true);
-    const expectedRequest = {
-      input : {
-          request : {
-            headers: {},
-            method: '',
-            protocol: 'HTTP/',
-            host: '',
-            path: '',
-            query: '',
-            service: serviceName
-          },
-          data: {}
+    it('Requests for other user should call teamsApi', async function() {
+      initStub({});
+      const auth = await client.isAuthorized(requests.self,[userId1, userId2]);
+      expect(auth).to.equal(false);
+      expect(stubs.axios.called).to.equal(true);
+      const expectedRequest = {
+        input : {
+            request : {
+              headers: {},
+              method: '',
+              protocol: 'HTTP/',
+              host: '',
+              path: '',
+              query: '',
+              service: serviceName
+            },
+            data: {}
+        }
       }
-    }
-    sinon.assert.calledWith(stubs.axios, 
-      opaHost+'/v1/data/backloops/access',expectedRequest
-    );
+      sinon.assert.calledWith(stubs.axios, 
+        opaHost+'/v1/data/backloops/access',expectedRequest
+      );
+    });
+
+    it('Requests for other user should call teamsApi and forward source request data', async function() {
+      initStub({});
+      const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2])
+      expect(auth).to.equal(false);
+      expect(stubs.axios.called).to.equal(true);
+      sinon.assert.calledWith(stubs.axios, 
+        opaHost+'/v1/data/backloops/access',expectedRestifyRequest
+      );
+    });
+
+    it('Requests for other user should call teamsApi and forward additional data', async function() {
+      initStub({});
+      const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2],{test:"test0"})
+      expect(auth).to.equal(false);
+      expect(stubs.axios.called).to.equal(true);
+      const expectedRequest = {...expectedRestifyRequest}
+      expectedRequest.input.data = {test:"test0"}
+      sinon.assert.calledWith(stubs.axios, 
+        opaHost+'/v1/data/backloops/access',expectedRequest
+      );
+    });
+
+    it('Requests for other user should call teamsApi and return authorized result when status is 200', async function() {
+      initStub({status:200, data:{result:{authorized:true}}});
+      const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2]);
+      expect(stubs.axios.called).to.equal(true);
+      expect(auth).to.equal(true);
+    });
+
+    it('Requests for other user should call teamsApi and return false when status is not 200', async function() {
+      initStub({status:404, data:{result:{authorized:true}}});
+      const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2]);
+      expect(auth).to.equal(false);
+      expect(stubs.axios.called).to.equal(true);
+    });
   });
 
-  it('Requests for other user should call teamsApi and forward source request data', async function() {
-    initStub({});
-    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2])
-    expect(auth).to.equal(false);
-    expect(stubs.axios.called).to.equal(true);
-    sinon.assert.calledWith(stubs.axios, 
-      opaHost+'/v1/data/backloops/access',expectedRestifyRequest
-    );
-  });
+  
+  describe('Self authorization',function() {
+    it('Requests without token data  should not be authorized',  function() {
+      const auth = client.selfAuthorized({},[userId1]);
+      expect(auth).to.equal(false);
+    });
 
-  it('Requests for other user should call teamsApi and forward additional data', async function() {
-    initStub({});
-    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2],{test:"test0"})
-    expect(auth).to.equal(false);
-    expect(stubs.axios.called).to.equal(true);
-    const expectedRequest = {...expectedRestifyRequest}
-    expectedRequest.input.data = {test:"test0"}
-    sinon.assert.calledWith(stubs.axios, 
-      opaHost+'/v1/data/backloops/access',expectedRequest
-    );
-  });
+    it('Requests with token userId exactly matching target userIDs should be authorized', function() {
+      const auth = client.selfAuthorized(requests.self,[userId1]);
+      expect(auth).to.equal(true);
+    });
 
-  it('Requests for other user should call teamsApi and return authorized result when status is 200', async function() {
-    initStub({status:200, data:{result:{authorized:true}}});
-    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2]);
-    expect(stubs.axios.called).to.equal(true);
-    expect(auth).to.equal(true);
-  });
+    it('Requests with token userId not exactly matching target userIDs should not be authorized', function() {
+      const auth = client.selfAuthorized(requests.self,[userId1, userId2]);
+      expect(auth).to.equal(false);
+    });
 
-  it('Requests for other user should call teamsApi and return false when status is not 200', async function() {
-    initStub({status:404, data:{result:{authorized:true}}});
-    const auth = await client.isAuthorized(requests.restifyReq,[userId1, userId2]);
-    expect(auth).to.equal(false);
-    expect(stubs.axios.called).to.equal(true);
+    it('Requests with token userId not matching target userIDs should not be authorized', function() {
+      const auth = client.selfAuthorized(requests.self,[ userId2]);
+      expect(auth).to.equal(false);
+    });
+
+    it('Requests with server token should be authorized',  function() {
+      let auth = client.selfAuthorized(requests.serverToken,[userId2]);
+      expect(auth).to.equal(true);
+      auth = client.selfAuthorized(requests.serverToken,[userId1, userId2]);
+      expect(auth).to.equal(true);
+    });
   });
-});
+  describe('Server authorization',function() {
+    it('Requests with server token should be authorized',  function() {
+      let auth = client.serverAuthorized(requests.serverToken,[userId2]);
+      expect(auth).to.equal(true);
+      auth = client.serverAuthorized(requests.serverToken,[userId1, userId2]);
+      expect(auth).to.equal(true);
+    });
+
+    it('Requests with user token should not be authorized',  function() {
+      const auth = client.serverAuthorized(requests.self,[userId1]);
+      expect(auth).to.equal(false);
+    });
+  });
+})
